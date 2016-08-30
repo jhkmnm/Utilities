@@ -1,0 +1,7 @@
+E:\Dev\Utilities\Utilities\bin\Debug\Utilities.dll
+E:\Dev\Utilities\Utilities\bin\Debug\Utilities.pdb
+E:\Dev\Utilities\Utilities\obj\Debug\Utilities.csprojResolveAssemblyReference.cache
+E:\Dev\Utilities\Utilities\obj\Debug\Utilities.dll
+E:\Dev\Utilities\Utilities\obj\Debug\Utilities.pdb
+E:\Dev\Utilities\Utilities\bin\Debug\Newtonsoft.Json.dll
+E:\Dev\Utilities\Utilities\bin\Debug\Newtonsoft.Json.xml
