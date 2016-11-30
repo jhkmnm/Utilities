@@ -30,7 +30,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.Office.Interop.Excel, Version=14.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c, processorArchitecture=MSIL">
+    <Reference Include="Microsoft.Office.Interop.Excel, Version=11.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c">
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
@@ -50,12 +50,11 @@
   <ItemGroup>
     <Compile Include="BaiduAPI\BaiduMapHelper.cs" />
     <Compile Include="DataVerifier.cs" />
-    <Compile Include="Email.cs" />
     <Compile Include="ExcelHelper\ExcelHelper.cs" />
     <Compile Include="HttpHelper\HttpCookieHelper.cs" />
     <Compile Include="HttpHelper\HttpHelper.cs" />
-    <Compile Include="MsgTools.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ValueParseExtension.cs" />
     <Compile Include="XmlHelper\XmlHelper.cs" />
   </ItemGroup>
   <ItemGroup>
