@@ -236,7 +236,7 @@ namespace Utilities
             return fileSaved;
         }
 
-        public DataSet ImportExcel()
+        public DataTable ImportExcel()
         {
             return ImportExcel(OpenFileDialog());
         }
@@ -246,43 +246,38 @@ namespace Utilities
         /// </summary>
         /// <param name="fileName">Excel全路径文件名</param>
         /// <returns>导入成功的DataSet</returns>
-        public DataSet ImportExcel(string fileName)
+        public DataTable ImportExcel(string fileName)
         {
-            if (status == -1) return null;
-            //判断文件是否被其他进程使用            
-            try
+            var sqlconn = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + fileName + ";Extended Properties='Excel 8.0;HDR=YES;IMEX=1';";
+            //判断Excel文件版本是否为2007版，提供不同的连接字符串，王润，2011-11-4
+            var extensionName = GetExcelVersion() == ExportDocumentType.Excel ? ".xls" : ".xlsx";
+            if (extensionName == ".xlsx")
             {
-                workbook = xlApp.Workbooks.Open(fileName, 0, false, 5, "", "", false, Excel.XlPlatform.xlWindows, "", true, false, 0, true, 1, 0);
-                worksheet = (Excel.Worksheet)workbook.Worksheets[1];
-            }
-            catch
-            {
-                returnMessage = "Excel文件处于打开状态，请保存关闭";
-                return null;
+                sqlconn = "Provider=Microsoft.Ace.OLEDB.12.0;Data Source=" + fileName + ";Extended Properties='Excel 12.0;HDR=YES;IMEX=1';";
             }
 
-            //获得所有Sheet名称
-            int n = workbook.Worksheets.Count;
-            string[] sheetSet = new string[n];
-            for (int i = 0; i < n; i++)
-            {
-                sheetSet[i] = ((Excel.Worksheet)workbook.Worksheets[i + 1]).Name;
-            }
+            const string sql = "SELECT * FROM [" + "sheet1" + "$]";
+            var dsTemp = new DataSet();
 
-            //释放Excel相关对象
-            Dispose();
-
-            //把EXCEL导入到DataSet
-            DataSet ds = null;            
-            List<string> connStrs = new List<string>();
-            connStrs.Add("Provider = Microsoft.Jet.OLEDB.4.0; Data Source = " + fileName + ";Extended Properties=\"Excel 8.0;HDR=No;IMEX=1;\"");
-            connStrs.Add("Provider = Microsoft.ACE.OLEDB.12.0 ; Data Source = " + fileName + ";Extended Properties=\"Excel 12.0;HDR=No;IMEX=1;\"");
-            foreach (string connStr in connStrs)
+            if (System.IO.File.Exists(fileName))
             {
-                ds = GetDataSet(connStr, sheetSet);
-                if (ds != null) break;
+                var oldcom = new System.Data.OleDb.OleDbCommand(sql, new System.Data.OleDb.OleDbConnection(sqlconn));
+                var oleda = new System.Data.OleDb.OleDbDataAdapter(oldcom);
+                oleda.Fill(dsTemp, "[" + "sheet1" + "$]");
+
+                if (dsTemp.Tables.Count == 0)
+                    return null;
+
+                return dsTemp.Tables[0].Copy();
+                //DataTable dt = new DataTable();                
+                //for (int i = 1; i < dsTemp.Tables[0].Rows.Count; i++)
+                //{
+                //    dt.Rows.Add(dsTemp.Tables[0].Rows[i].ItemArray);
+                //}                
+
+                //return dt.Copy();
             }
-            return ds;
+            return null;
         }
 
         /// <summary>
@@ -292,14 +287,14 @@ namespace Utilities
         /// <returns></returns>
         protected DataSet GetDataSet(string connStr, string[] sheetSet)
         {
-            DataSet ds = null;
+            DataSet dsReturn = null;
             using (OleDbConnection conn = new OleDbConnection(connStr))
             {
                 try
                 {
                     conn.Open();
                     OleDbDataAdapter da;
-                    ds = new DataSet();
+                    var ds = new DataSet();
                     for (int i = 0; i < sheetSet.Length; i++)
                     {
                         string sql = "select * from [" + sheetSet[i] + "$] ";
@@ -309,14 +304,29 @@ namespace Utilities
                     }
                     conn.Close();
                     conn.Dispose();
+
+                    dsReturn = new DataSet();
+                    foreach(DataTable dsDt in ds.Tables)
+                    {
+                        DataTable dt = new DataTable();
+                        for(int i =0;i< dsDt.Columns.Count;i++)
+                        {
+                            dt.Columns.Add(new DataColumn(dsDt.Rows[0][i].ToString()));
+                        }
+                        for(int i=1;i<dsDt.Rows.Count;i++)
+                        {
+                            dt.Rows.Add(dsDt.Rows[i].ItemArray);
+                        }
+                        dsReturn.Tables.Add(dt);
+                    }
                 }
                 catch (Exception ex)
                 {
                     return null;
                 }
             }
-            return ds;
-        }
+            return dsReturn;
+        }        
 
         /// <summary>
         /// 释放Excel对应的对象资源
@@ -460,7 +470,7 @@ namespace Utilities
             var _quotationNode = GetXmlNode(dataKey);
             var importmodel = XmlHelper.XmlDeserialize<ImportXMLModel>(_quotationNode.OuterXml, Encoding.UTF8);
 
-            var dt = ImportExcel().Tables[0];
+            var dt = ImportExcel();            
 
             dv.Check(dt == null, "导入的Excel中没有数据");
 
