@@ -51,17 +51,38 @@
   <ItemGroup>
     <Compile Include="BaiduAPI\BaiduMapHelper.cs" />
     <Compile Include="DataVerifier.cs" />
+    <Compile Include="EnumDescConverter.cs" />
     <Compile Include="Hepler\ExcelHelper.cs" />
     <Compile Include="Hepler\HttpCookieHelper.cs" />
     <Compile Include="Hepler\HttpHelper.cs" />
     <Compile Include="Hepler\XMLHepler.cs" />
+    <Compile Include="InitComboBox.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="UserControls\TextIntegerOnly.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\TextIntegerOnly.Designer.cs">
+      <DependentUpon>TextIntegerOnly.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserControls\UcPagerEx.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UserControls\UcPagerEx.Designer.cs">
+      <DependentUpon>UcPagerEx.cs</DependentUpon>
+    </Compile>
     <Compile Include="ValueParseExtension.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <EmbeddedResource Include="UserControls\TextIntegerOnly.resx">
+      <DependentUpon>TextIntegerOnly.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UserControls\UcPagerEx.resx">
+      <DependentUpon>UcPagerEx.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
