@@ -16,557 +16,262 @@ using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Utilities
 {
-    public class ExcelHelper : IDisposable
+    /// <summary>
+    /// 导出Excel辅助类
+    /// 郭龙飞 2013-5-3
+    /// </summary>
+    public static class ExportExcelHelper
     {
-        #region Fields
-        private static ExcelHelper instance;
-        private static readonly object syncRoot = new object();
-        private string returnMessage;
-        private Excel.Application xlApp;
-        private Excel.Workbooks workbooks = null;
-        private Excel.Workbook workbook = null;
-        private Excel.Worksheet worksheet = null;
-        private Excel.Range range = null;
-        private int status = -1;
-        private bool disposed = false;//是否已经释放资源的标记
-        #endregion
-
-        private ExcelHelper()
-        {
-            status = IsExistExecl() ? 0 : -1;
-        }
-
-        public static ExcelHelper GetInstance()
-        {
-            return new ExcelHelper();
-        }
-
-        #region Properties
+        #region 导出对象数据到Excel文件
         /// <summary>
-        /// 返回信息
+        /// 高效的导出方法，
+        /// 如果记录太多可以分sheet页了
         /// </summary>
-        public string ReturnMessage
+        /// <param name="gridView">DataGridView控件</param>
+        /// <param name="fileName">文件名</param>
+        /// <param name="sheetName">sheet名</param>
+        public static bool ExportExcel(DataGridView gridView, string fileName, string sheetName)
         {
-            get { return returnMessage; }
+            return ExportExcel(gridView, fileName, sheetName, null);
         }
 
         /// <summary>
-        /// 状态:0-正常，-1-失败 1-成功
+        /// 高效的导出方法，
+        /// 如果记录太多可以分sheet页了
         /// </summary>
-        public int Status
+        /// <param name="gridView">DataGridView控件</param>
+        /// <param name="fileName">文件名</param>
+        /// <param name="sheetName">sheet名</param>
+        /// <param name="nonColumns">不显示列</param>
+        public static bool ExportExcel(DataGridView gridView, string fileName, string sheetName, List<string> nonColumns)
         {
-            get { return status; }
-        }
-        #endregion
+            string version = GetExcelExtension();
+            if (string.IsNullOrEmpty(version))
+            {
+                return false;
+            }
 
-        #region Methods
-        /// <summary>
-        /// 判断是否安装Excel
-        /// </summary>
-        /// <returns></returns>
-        protected bool IsExistExecl()
-        {
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Title = "导出Excel";
+            saveFileDialog.DefaultExt = version;
+            saveFileDialog.Filter = "Excel文件|*" + version;
+            saveFileDialog.FileName = fileName;
+            if (saveFileDialog.ShowDialog() != DialogResult.OK)
+            {
+                return false;
+            }
             try
             {
-                xlApp = new Excel.Application();
-                if (xlApp == null)
+                bool bResult = SaveExcelFile(gridView, saveFileDialog.FileName, version, sheetName, nonColumns);
+                if (bResult == true)
                 {
-                    returnMessage = "无法创建Excel对象，可能您的计算机未安装Excel!";
-                    return false;
+                    return true;
                 }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 童荣辉增加 20130724 抽取出共用的代码，以适应与弹出保存框区分开
+        /// DataGridView数据展出到Excel
+        /// </summary>
+        private static bool SaveExcelFile(DataGridView gridView, string strfileName, string strVersion, string sheetName, List<string> nonColumns)
+        {
+            int maxLength = 65535;
+            if (strVersion.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                maxLength = 1048575;
+            }
+            string saveFileName = strfileName;
+            System.Reflection.Missing miss = System.Reflection.Missing.Value;
+            //创建EXCEL对象appExcel,Workbook对象,Worksheet对象,Range对象
+            ExcelApp.Application appExcel = new ExcelApp.Application();
+            ExcelApp.Workbook workbookData = appExcel.Workbooks.Add(ExcelApp.XlWBATemplate.xlWBATWorksheet);
+            ExcelApp.Worksheet worksheetData = null;
+            ExcelApp.Range rangedata;
+            //设置对象不可见
+            appExcel.Visible = false;
+            int countOfSheets = ValueCalculate.CalculateCountOfPage(gridView.RowCount, maxLength);
+            /* 在调用Excel应用程序，或创建Excel工作簿之前，记着加上下面的两行代码
+             * 这是因为Excel有一个Bug，如果你的操作系统的环境不是英文的，而Excel就会在执行下面的代码时，报异常。
+             */
+            for (int ipage = 1; ipage <= countOfSheets; ipage++)
+            {
+                if (worksheetData == null)
+                {
+                    worksheetData = (Microsoft.Office.Interop.Excel.Worksheet)workbookData.Worksheets.Add(Type.Missing, Type.Missing, 1, Type.Missing);
+                }
+                else
+                {
+                    worksheetData = (Microsoft.Office.Interop.Excel.Worksheet)workbookData.Worksheets.Add(Type.Missing, worksheetData, 1, Type.Missing);
+                }
+                //当前页数据条数
+                int currentPageNums = 0;
+                //给工作表赋名称
+                if (countOfSheets == 1)
+                {
+                    worksheetData.Name = sheetName;
+                    currentPageNums = gridView.RowCount;
+                }
+                else
+                {
+                    worksheetData.Name = string.Format("{0}{1}", sheetName, ipage);
+                    if (ipage == countOfSheets)
+                    {
+                        currentPageNums = gridView.RowCount - maxLength * (ipage - 1);
+                    }
+                    else
+                    {
+                        currentPageNums = maxLength;
+                    }
+                }
+                //新建一个字典来控制Visible的列不导出
+                Dictionary<int, int> dictionary = new Dictionary<int, int>();
+                int iVisible = 0;
+                //清零计数并开始计数
+                // 保存到WorkSheet的表头，你应该看到，是一个Cell一个Cell的存储，这样效率特别低，解决的办法是，使用Rang，一块一块地存储到Excel
+                for (int i = 0; i < gridView.ColumnCount; i++)
+                {
+                    if (gridView.Columns[i].Visible &&
+                        ((nonColumns != null && !nonColumns.Contains(gridView.Columns[i].Name)) || nonColumns == null))
+                    {
+                        worksheetData.Cells[1, iVisible + 1] = gridView.Columns[i].HeaderText.ToString();
+                        var range = worksheetData.Cells[1, iVisible + 1];
+                        range.Font.Bold = true;
+                        range.Font.Size = 12;
+                        dictionary.Add(iVisible, i);
+                        iVisible++;
+                    }
+                }
+                //先给Range对象一个范围为A2开始，Range对象可以给一个CELL的范围，也可以给例如A1到H10这样的范围
+                //因为第一行已经写了表头，所以所有数据都应该从A2开始
+                rangedata = worksheetData.get_Range("A2", miss);
+                Microsoft.Office.Interop.Excel.Range xlRang = null;
+
+                //iColumnAccount为实际列数，最大列数
+                int iColumnAccount = iVisible;
+                //在内存中声明一个iEachSize×iColumnAccount的数组，iEachSize是每次最大存储的行数，iColumnAccount就是存储的实际列数
+                //object[,] objVal = new object[currentPageNums, iColumnAccount];
+                //每次最大导入数据量
+                int perMaxCount = 2000;
+                //当前行
+                int iParstedRow = 0;
+                int times = ValueCalculate.CalculateCountOfPage(currentPageNums, perMaxCount);
+                for (int ti = 0; ti < times; ti++)
+                {
+                    //当前循环的得到的数
+                    int currentTimeNum = 0;
+                    if ((currentPageNums - ti * perMaxCount) < perMaxCount)
+                    {
+                        currentTimeNum = currentPageNums - ti * perMaxCount;
+                    }
+                    else
+                    {
+                        currentTimeNum = perMaxCount;
+                    }
+                    object[,] objVal = new object[currentTimeNum, iColumnAccount];
+                    for (int i = 0; i < currentTimeNum; i++)
+                    {
+                        for (int j = 0; j < iColumnAccount; j++)
+                        {
+                            int numOfColumn;
+                            if (!dictionary.TryGetValue(j, out numOfColumn))
+                            {
+                                throw new KeyNotFoundException("导出Excel异常，未找到列！");
+                            }
+                            object cellValue = gridView[numOfColumn, ti * perMaxCount + i + (ipage - 1) * maxLength].Value;
+                            if (cellValue != null && (cellValue.GetType() == typeof(string) || cellValue.GetType() == typeof(DateTime)))
+                            {
+                                cellValue = "'" + cellValue.ToString();
+                            }
+                            objVal[i, j] = cellValue;
+                        }
+                        System.Windows.Forms.Application.DoEvents();
+                    }
+                    xlRang = worksheetData.get_Range("A" + (iParstedRow + 2).ToString(), (ExcelColumnNameEnum.A + iColumnAccount - 1).ToString() + (currentTimeNum + iParstedRow + 1).ToString());
+                    // 调用Range的Value2属性，把内存中的值赋给Excel
+                    xlRang.Value2 = objVal;
+
+                    iParstedRow += currentTimeNum;
+                }
+            }
+            try
+            {
+                workbookData.Saved = true;
+                workbookData.SaveCopyAs(saveFileName);
+                return true;
             }
             catch (Exception ex)
             {
-                returnMessage = "请正确安装Excel！";
+                MessageBox.Show(ex.Message);
                 return false;
             }
-
-            return true;
-        }
-
-        /// <summary>
-        /// 获得保存路径
-        /// </summary>
-        /// <returns></returns>
-        public static string SaveFileDialog()
-        {
-            var version = GetExcelVersion() == ExportDocumentType.Excel ? ".xls" : ".xlsx";
-
-            SaveFileDialog sfd = new SaveFileDialog();
-            sfd.DefaultExt = version;
-            sfd.Filter = @"Excel文件|*.xlsx;*.xls";
-            if (sfd.ShowDialog() == DialogResult.OK)
+            finally
             {
-                return sfd.FileName;
-            }
-            return string.Empty;
-        }
-
-        /// <summary>
-        /// 获得打开文件的路径
-        /// </summary>
-        /// <returns></returns>
-        public static string OpenFileDialog()
-        {
-            var version = GetExcelVersion() == ExportDocumentType.Excel ? ".xls" : ".xlsx";
-
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.DefaultExt = version;
-            ofd.Filter = @"Excel文件|*.xlsx;*.xls";
-            if (ofd.ShowDialog() == DialogResult.OK)
-            {
-                return ofd.FileName;
-            }
-            return string.Empty;
-        }
-
-        /// <summary>
-        /// 设置单元格边框
-        /// </summary>
-        protected void SetCellsBorderAround()
-        {
-            range.BorderAround(Excel.XlLineStyle.xlContinuous, Excel.XlBorderWeight.xlThin, Excel.XlColorIndex.xlColorIndexAutomatic, null);
-
-            range.Borders[Excel.XlBordersIndex.xlInsideVertical].ColorIndex = Excel.XlColorIndex.xlColorIndexAutomatic;
-            range.Borders[Excel.XlBordersIndex.xlInsideVertical].LineStyle = Excel.XlLineStyle.xlContinuous;
-            range.Borders[Excel.XlBordersIndex.xlInsideVertical].Weight = Excel.XlBorderWeight.xlThin;
-        }
-
-        public bool DataTableToExcel(DataTable dt, string sheetName)
-        {
-            string filename = SaveFileDialog();
-            return DataTableToExecl(dt, filename, sheetName);
-        }
-
-        /// <summary>
-        /// 将DataTable导出Excel
-        /// </summary>
-        /// <param name="dt">数据集</param>
-        /// <param name="saveFilePath">保存路径</param>
-        /// <param name="reportName">报表名称</param>
-        /// <returns>是否成功</returns>
-        public bool DataTableToExecl(DataTable dt, string saveFileName, string reportName)
-        {
-            //判断是否安装Excel
-            bool fileSaved = false;
-            if (status == -1) return fileSaved;
-            //判断数据集是否为null
-            if (dt == null)
-            {
-                returnMessage = "无引出数据！";
-                return false;
-            }
-            //判断保存路径是否有效
-            if (!saveFileName.Contains(":"))
-            {
-                returnMessage = "引出路径有误！请选择正确路径！";
-                return false;
-            }
-
-            //创建excel对象
-            workbooks = xlApp.Workbooks;
-            workbook = workbooks.Add(Excel.XlWBATemplate.xlWBATWorksheet);
-            worksheet = (Excel.Worksheet)workbook.Worksheets[1];//取得sheet1
-            worksheet.Cells.Font.Size = 10;
-            worksheet.Cells.NumberFormat = "@";
-            long totalCount = dt.Rows.Count;
-            long rowRead = 0;
-            float percent = 0;
-            int rowIndex = 0;
-
-            //第一行为报表名称，如果为null则不保存该行    
-            ++rowIndex;
-            worksheet.Cells[rowIndex, 1] = reportName;
-            range = (Excel.Range)worksheet.Cells[rowIndex, 1];
-            range.Font.Bold = true;
-
-            //写入字段(标题)
-            ++rowIndex;
-            for (int i = 0; i < dt.Columns.Count; i++)
-            {
-                worksheet.Cells[rowIndex, i + 1] = dt.Columns[i].ColumnName;
-                range = (Excel.Range)worksheet.Cells[rowIndex, i + 1];
-
-                range.Font.Color = ColorTranslator.ToOle(Color.Blue);
-                range.Interior.Color = dt.Columns[i].Caption == "表体" ? ColorTranslator.ToOle(Color.SkyBlue) : ColorTranslator.ToOle(Color.Yellow);
-            }
-
-            //写入数据
-            ++rowIndex;
-            for (int r = 0; r < dt.Rows.Count; r++)
-            {
-                for (int i = 0; i < dt.Columns.Count; i++)
-                {
-                    worksheet.Cells[r + rowIndex, i + 1] = dt.Rows[r][i].ToString();
-                }
-                rowRead++;
-                percent = ((float)(100 * rowRead)) / totalCount;
-            }
-
-            //画单元格边框
-            range = worksheet.get_Range(worksheet.Cells[2, 1], worksheet.Cells[dt.Rows.Count + 2, dt.Columns.Count]);
-            this.SetCellsBorderAround();
-
-            //列宽自适应
-            range.EntireColumn.AutoFit();
-
-            //保存文件
-            if (saveFileName != "")
-            {
-                try
-                {
-                    workbook.Saved = true;
-                    workbook.SaveCopyAs(saveFileName);
-                    fileSaved = true;
-                }
-                catch (Exception ex)
-                {
-                    fileSaved = false;
-                    returnMessage = "导出文件时出错,文件可能正被打开！\n" + ex.Message;
-                }
-            }
-            else
-            {
-                fileSaved = false;
-            }
-
-            //释放Excel对应的对象（除xlApp,因为创建xlApp很花时间，所以等析构时才删除)
-            //Dispose(false);
-            Dispose();
-            return fileSaved;
-        }
-
-        public DataTable ImportExcel()
-        {
-            return ImportExcel(OpenFileDialog());
-        }
-
-        /// <summary>
-        /// 导入EXCEL到DataSet
-        /// </summary>
-        /// <param name="fileName">Excel全路径文件名</param>
-        /// <returns>导入成功的DataSet</returns>
-        public DataTable ImportExcel(string fileName)
-        {
-            var sqlconn = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" + fileName + ";Extended Properties='Excel 8.0;HDR=YES;IMEX=1';";
-            //判断Excel文件版本是否为2007版，提供不同的连接字符串，王润，2011-11-4
-            var extensionName = GetExcelVersion() == ExportDocumentType.Excel ? ".xls" : ".xlsx";
-            if (extensionName == ".xlsx")
-            {
-                sqlconn = "Provider=Microsoft.Ace.OLEDB.12.0;Data Source=" + fileName + ";Extended Properties='Excel 12.0;HDR=YES;IMEX=1';";
-            }
-
-            const string sql = "SELECT * FROM [" + "sheet1" + "$]";
-            var dsTemp = new DataSet();
-
-            if (System.IO.File.Exists(fileName))
-            {
-                var oldcom = new System.Data.OleDb.OleDbCommand(sql, new System.Data.OleDb.OleDbConnection(sqlconn));
-                var oleda = new System.Data.OleDb.OleDbDataAdapter(oldcom);
-                oleda.Fill(dsTemp, "[" + "sheet1" + "$]");
-
-                if (dsTemp.Tables.Count == 0)
-                    return null;
-
-                return dsTemp.Tables[0].Copy();
-                //DataTable dt = new DataTable();                
-                //for (int i = 1; i < dsTemp.Tables[0].Rows.Count; i++)
-                //{
-                //    dt.Rows.Add(dsTemp.Tables[0].Rows[i].ItemArray);
-                //}                
-
-                //return dt.Copy();
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 通过olddb获得dataset
-        /// </summary>
-        /// <param name="connectionstring"></param>
-        /// <returns></returns>
-        protected DataSet GetDataSet(string connStr, string[] sheetSet)
-        {
-            DataSet dsReturn = null;
-            using (OleDbConnection conn = new OleDbConnection(connStr))
-            {
-                try
-                {
-                    conn.Open();
-                    OleDbDataAdapter da;
-                    var ds = new DataSet();
-                    for (int i = 0; i < sheetSet.Length; i++)
-                    {
-                        string sql = "select * from [" + sheetSet[i] + "$] ";
-                        da = new OleDbDataAdapter(sql, conn);
-                        da.Fill(ds, sheetSet[i]);
-                        da.Dispose();
-                    }
-                    conn.Close();
-                    conn.Dispose();
-
-                    dsReturn = new DataSet();
-                    foreach(DataTable dsDt in ds.Tables)
-                    {
-                        DataTable dt = new DataTable();
-                        for(int i =0;i< dsDt.Columns.Count;i++)
-                        {
-                            dt.Columns.Add(new DataColumn(dsDt.Rows[0][i].ToString()));
-                        }
-                        for(int i=1;i<dsDt.Rows.Count;i++)
-                        {
-                            dt.Rows.Add(dsDt.Rows[i].ItemArray);
-                        }
-                        dsReturn.Tables.Add(dt);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    return null;
-                }
-            }
-            return dsReturn;
-        }        
-
-        /// <summary>
-        /// 释放Excel对应的对象资源
-        /// </summary>
-        /// <param name="isDisposeAll"></param>
-        protected virtual void Dispose(bool disposing)
-        {
-            try
-            {
-                if (!disposed)
-                {
-                    if (disposing)
-                    {
-                        if (range != null)
-                        {
-                            System.Runtime.InteropServices.Marshal.ReleaseComObject(range);
-                            range = null;
-                        }
-                        if (worksheet != null)
-                        {
-                            System.Runtime.InteropServices.Marshal.ReleaseComObject(worksheet);
-                            worksheet = null;
-                        }
-                        if (workbook != null)
-                        {
-                            System.Runtime.InteropServices.Marshal.ReleaseComObject(workbook);
-                            workbook = null;
-                        }
-                        if (workbooks != null)
-                        {
-                            xlApp.Application.Workbooks.Close();
-                            System.Runtime.InteropServices.Marshal.ReleaseComObject(workbooks);
-                            workbooks = null;
-                        }
-                        if (xlApp != null)
-                        {
-                            xlApp.Quit();
-                            System.Runtime.InteropServices.Marshal.ReleaseComObject(xlApp);
-                        }
-                        int generation = GC.GetGeneration(xlApp);
-                        System.GC.Collect(generation);
-                    }
-
-                    //非托管资源的释放
-                    //KillExcel();
-                }
-                disposed = true;
-            }
-            catch (Exception e)
-            {
-                throw e;
+                QuitExcel(appExcel);
             }
         }
-
-        /// <summary> 
-        /// 会自动释放非托管的该类实例的相关资源
-        /// </summary>
-        public void Dispose()
-        {
-            try
-            {
-                Dispose(true);
-                //告诉垃圾回收器,资源已经被回收
-                GC.SuppressFinalize(this);
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
-        }
-
-        /// <summary>
-        /// 关闭
-        /// </summary>
-        public void Close()
-        {
-            try
-            {
-                this.Dispose();
-            }
-            catch (Exception e)
-            {
-
-                throw e;
-            }
-        }
-
-        /// <summary>
-        /// 析构函数
-        /// </summary>
-        ~ExcelHelper()
-        {
-            try
-            {
-                Dispose(false);
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
-        }
-
-        /// <summary>
-        /// 关闭Execl进程(非托管资源使用)
-        /// </summary>
-        private void KillExcel()
-        {
-            try
-            {
-                Process[] ps = Process.GetProcesses();
-                foreach (Process p in ps)
-                {
-                    if (p.ProcessName.ToLower().Equals("excel"))
-                    {
-                            p.Kill();                     
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                //MessageBox.Show("ERROR " + ex.Message);
-            }
-        }
-
-        private static System.Xml.XmlNode GetXmlNode(string dataKey)
-        {
-            XmlHelper.LoadXml("Config/ExcelModel.xml");
-            return XmlHelper.GetXmlNode("ViewDataDetail", dataKey);
-        }
-
-        /// <summary>
-        /// 读取Excel并将数据返回
-        /// 如果存在错误数据，将返回一个count=0的List
-        /// </summary>
-        /// <returns></returns>
-        public List<ImportXMLModel> Import(string dataKey, ref List<ErrorVO> importError)
-        {
-            var imports = new List<ImportXMLModel>();
-            var dv = new DataVerifier();
-
-            var _quotationNode = GetXmlNode(dataKey);
-            var importmodel = XmlHelper.XmlDeserialize<ImportXMLModel>(_quotationNode.OuterXml, Encoding.UTF8);
-
-            var dt = ImportExcel();            
-
-            dv.Check(dt == null, "导入的Excel中没有数据");
-
-            if (dv.Pass)
-            {
-                var checkcol = importmodel.Columns.Where(item => !dt.Columns.Contains(item.ColumnName));
-                dv.CheckIfBeforePass(checkcol.Any(), "导入的格式与模板不一致,请按模板导入");
-
-                if (dv.Pass)
-                {
-                    for (var i = 0; i < dt.Rows.Count; i++)
-                    {
-                        var import = Clone(importmodel);
-                        foreach (var col in importmodel.Columns)
-                        {
-                            import[col.ColumnName].ColumnVaue = dt.Rows[i][col.ColumnName].ToString().Trim();
-                        }
-                        import.Columns.Add(new ImportColumn { ColumnName = "序号", ColumnVaue = (i + 2).ToString() });
-
-                        if (!import.Pass)
-                        {
-                            var error = new ErrorVO("第 " + (i + 2).ToString() + " 行", import.ErrorMessage);
-                            importError.Add(error);
-                        }
-                        else
-                        {
-                            imports.Add(import);
-                        }
-                    }
-                }
-            }
-            dv.ShowMsgIfFailed();
-
-            return imports;
-        }
-
-        /// <summary>
-        /// 利用 System.Runtime.Serialization序列化与反序列化完成引用对象的复制
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="realObject"></param>
-        /// <returns></returns>
-        public static T Clone<T>(T realObject)
-        {
-            using (Stream objectStream = new MemoryStream())
-            {
-                IFormatter formatter = new BinaryFormatter();
-                formatter.Serialize(objectStream, realObject);
-                objectStream.Seek(0, SeekOrigin.Begin);
-                return (T)formatter.Deserialize(objectStream);
-            }
-        }
-
         #endregion
 
         /// <summary>
-        /// 缓存版本号
+        /// 退出Excel
         /// </summary>
-        private static string excelVersion;
-
-        public static ExportDocumentType GetExcelVersion()
-        {
-            if (excelVersion == null)
-            {
-                var ap = new Microsoft.Office.Interop.Excel.Application();
-                excelVersion = ap.Version;
-                QuitExcel(ap);
-            }
-            float f = excelVersion.ToFloat();
-            if (f == 0f)
-            {
-                return ExportDocumentType.None;
-            }
-            else if (f < 12f)
-            {
-                return ExportDocumentType.Excel;
-            }
-            else
-            {
-                return ExportDocumentType.Excel2007;
-            }
-        }
-
+        /// <param name="application">Excel进程</param>
         private static void QuitExcel(Microsoft.Office.Interop.Excel.Application application)
         {
             application.Quit();
             System.Runtime.InteropServices.Marshal.ReleaseComObject(application);
         }
 
-        public enum ExportDocumentType
+        /// <summary>
+        /// Excel扩展名
+        /// </summary>
+        private static string excelVersion;
+
+        /// <summary>
+        /// 获取Excel扩展名
+        /// </summary>
+        /// <returns>Excel扩展名</returns>
+        private static string GetExcelExtension()
         {
-            None,
-            Excel,
-            CSV,
-            PDF,
-            Excel2007
+            if (excelVersion == null)
+            {
+                Microsoft.Office.Interop.Excel.Application ap = new Microsoft.Office.Interop.Excel.Application();
+                excelVersion = ap.Version;
+                QuitExcel(ap);
+            }
+            float f = excelVersion.ToFloat();
+            if (f == 0f)
+            {
+                MessageBox.Show("请安装EXCEL 2003或2007");
+                return "";
+            }
+            else if (f < 12f)
+            {
+                return ".xls";
+            }
+            else
+            {
+                return ".xlsx";
+            }
+        }
+
+        public static void OpenFile(string fileName)
+        {
+            if (UTIL.MsgTool.ShowConfirmMessage("需要打开吗？") == DialogResult.OK)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(fileName);
+                }
+                catch (Exception)
+                {
+                    UTIL.MsgTool.ShowMessage("系统中没有能打开" + fileName + "的程序");
+                }
+            }
         }
     }
 
